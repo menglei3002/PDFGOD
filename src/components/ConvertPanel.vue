@@ -1,53 +1,35 @@
 <script setup lang="ts">
-import { invoke } from "@tauri-apps/api/core";
-
-const props = defineProps<{
-  file: string;
-  format: string;
+defineProps<{
+  fileCount: number;
   converting: boolean;
+  hasResults: boolean;
+  currentFile: string;
   progress: number;
   progressMsg: string;
-  error: string;
 }>();
 
-const emit = defineEmits<{ start: [] }>();
-
-async function convert() {
-  emit("start");
-  // The actual invoke is async but progress comes via events
-  // We fire-and-forget the invoke; events handle progress/result
-  invoke("convert_pdf", {
-    input: props.file,
-    format: props.format,
-  }).catch((e) => {
-    console.error("Conversion error:", e);
-  });
-}
+defineEmits<{ convert: [] }>();
 </script>
 
 <template>
   <div class="convert-panel">
     <button
-      v-if="!converting && !error"
+      v-if="!converting"
       class="btn-convert"
-      @click="convert"
+      :disabled="fileCount === 0"
+      @click="$emit('convert')"
     >
-      Convert to {{ format.toUpperCase() }}
+      <template v-if="fileCount === 0">Add Files to Start</template>
+      <template v-else-if="hasResults">Convert Again ({{ fileCount }} File{{ fileCount > 1 ? 's' : '' }})</template>
+      <template v-else>Convert {{ fileCount }} File{{ fileCount > 1 ? 's' : '' }}</template>
     </button>
 
     <div v-if="converting" class="progress-section">
+      <p class="current-file">{{ currentFile }}</p>
       <div class="progress-bar">
-        <div
-          class="progress-fill"
-          :style="{ width: progress + '%' }"
-        />
+        <div class="progress-fill" :style="{ width: progress + '%' }" />
       </div>
       <p class="progress-text">{{ progressMsg }}</p>
-    </div>
-
-    <div v-if="error" class="error-box">
-      <p class="error-title">Conversion Failed</p>
-      <p class="error-msg">{{ error }}</p>
     </div>
   </div>
 </template>
@@ -70,12 +52,26 @@ async function convert() {
   transition: opacity 0.2s;
 }
 
-.btn-convert:hover {
+.btn-convert:hover:not(:disabled) {
   opacity: 0.9;
+}
+
+.btn-convert:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .progress-section {
   width: 100%;
+}
+
+.current-file {
+  font-size: 12px;
+  color: #888;
+  margin-bottom: 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .progress-bar {
@@ -98,24 +94,5 @@ async function convert() {
   font-size: 13px;
   color: #888;
   margin-top: 8px;
-}
-
-.error-box {
-  padding: 14px;
-  background: rgba(255, 80, 80, 0.1);
-  border: 1px solid rgba(255, 80, 80, 0.3);
-  border-radius: 10px;
-}
-
-.error-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: #ff6060;
-  margin-bottom: 6px;
-}
-
-.error-msg {
-  font-size: 12px;
-  color: #cc6666;
 }
 </style>

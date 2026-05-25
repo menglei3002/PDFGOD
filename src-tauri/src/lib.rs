@@ -1,6 +1,51 @@
 use std::io::BufRead;
 use std::process::{Command, Stdio};
+use std::thread;
 use tauri::{Emitter, Manager};
+
+fn find_python_venv() -> Option<std::path::PathBuf> {
+    let cwd = std::env::current_dir().ok()?;
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.to_path_buf()))?;
+
+    let candidates: Vec<std::path::PathBuf> = vec![
+        cwd.join("PaddleOCR/.venv/Scripts/python.exe"),
+        cwd.join("../PaddleOCR/.venv/Scripts/python.exe"),
+        exe_dir.join("../../../PaddleOCR/.venv/Scripts/python.exe"),
+    ];
+
+    candidates.into_iter().find(|p| p.exists())
+}
+
+fn find_python() -> std::path::PathBuf {
+    // Prefer local PaddleOCR venv Python (D drive, no C drive usage)
+    if let Some(venv) = find_python_venv() {
+        return venv;
+    }
+
+    if cfg!(target_os = "windows") {
+        for candidate in &["python", "py"] {
+            let args = if *candidate == "py" {
+                vec!["-3", "--version"]
+            } else {
+                vec!["--version"]
+            };
+            if Command::new(candidate)
+                .args(&args)
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .is_ok()
+            {
+                return std::path::PathBuf::from(candidate);
+            }
+        }
+        std::path::PathBuf::from("python")
+    } else {
+        std::path::PathBuf::from("python3")
+    }
+}
 
 #[tauri::command]
 fn convert_pdf(
@@ -10,30 +55,33 @@ fn convert_pdf(
     output: Option<String>,
     dpi: Option<u32>,
 ) -> Result<String, String> {
-    let python = if cfg!(target_os = "windows") {
-        "python"
-    } else {
-        "python3"
-    };
+    let python = find_python();
 
-    let engine_path = app
-        .path()
-        .resource_dir()
-        .unwrap_or_default()
-        .join("engine")
-        .join("convert.py");
+    // Search for engine/convert.py in multiple locations:
+    // 1. Resource directory (production build: engine/ beside exe)
+    // 2. Current directory (dev if launched from project root)
+    // 3. ../engine/ from current dir (dev: cargo runs from src-tauri/)
+    // 4. ../../../engine/ from exe (dev: exe is in src-tauri/target/debug/)
+    let cwd = std::env::current_dir().unwrap_or_default();
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.to_path_buf()))
+        .unwrap_or_default();
 
-    // Fallback: look relative to the executable
-    let script = if engine_path.exists() {
-        engine_path
-    } else {
-        std::env::current_dir()
-            .unwrap_or_default()
-            .join("engine")
-            .join("convert.py")
-    };
+    let candidates = vec![
+        app.path().resource_dir().unwrap_or_default().join("engine").join("convert.py"),
+        cwd.join("engine").join("convert.py"),
+        cwd.join("..").join("engine").join("convert.py"),
+        exe_dir.join("..").join("..").join("..").join("engine").join("convert.py"),
+    ];
 
-    let mut cmd = Command::new(python);
+    let script = candidates
+        .iter()
+        .find(|p| p.exists())
+        .cloned()
+        .unwrap_or_else(|| candidates[0].clone());
+
+    let mut cmd = Command::new(&python);
     cmd.arg(&script)
         .arg("--input")
         .arg(&input)
@@ -49,56 +97,90 @@ fn convert_pdf(
         cmd.arg("--dpi").arg(d.to_string());
     }
 
-    let mut child = cmd.spawn().map_err(|e| format!("Failed to start Python: {}", e))?;
+    let mut child = cmd.spawn().map_err(|e| format!("Failed to start Python ({}): {}", python.display(), e))?;
 
-    let stdout = child.stdout.take().unwrap();
-    let reader = std::io::BufReader::new(stdout);
+    // Take stdout and stderr before spawning threads
+    let mut stdout = child.stdout.take().unwrap();
+    let stderr = child.stderr.take().unwrap();
+
+    // Read stderr in a separate thread to avoid pipe buffer deadlock
+    let stderr_handle = thread::spawn(move || {
+        let reader = std::io::BufReader::new(stderr);
+        reader.lines().filter_map(|l| l.ok()).collect::<Vec<String>>()
+    });
+
+    // Read stdout byte-by-byte using split, handling non-UTF-8 input gracefully
+    use std::io::Read;
+    let mut buf = Vec::new();
+    stdout.read_to_end(&mut buf).map_err(|e| format!("Failed to read stdout: {}", e))?;
 
     let mut last_output = String::new();
+    let mut non_json_lines: Vec<String> = Vec::new();
 
-    for line in reader.lines() {
-        if let Ok(line) = line {
-            if let Ok(data) = serde_json::from_str::<serde_json::Value>(&line) {
-                let event_type = data["type"].as_str().unwrap_or("");
+    for line in buf.split(|&b| b == b'\n') {
+        let line = String::from_utf8_lossy(line).trim().to_string();
+        if line.is_empty() {
+            continue;
+        }
+        if let Ok(data) = serde_json::from_str::<serde_json::Value>(&line) {
+            let event_type = data["type"].as_str().unwrap_or("");
 
-                match event_type {
-                    "progress" => {
-                        let _ = app.emit("conversion-progress", &data);
-                    }
-                    "done" => {
-                        last_output = data["output"].as_str().unwrap_or("").to_string();
-                        let _ = app.emit("conversion-progress", &data);
-                    }
-                    "error" => {
-                        let err_msg = data["error"].as_str().unwrap_or("Unknown error");
-                        let _ = app.emit("conversion-progress", &data);
-                        return Err(err_msg.to_string());
-                    }
-                    _ => {}
+            match event_type {
+                "progress" => {
+                    let _ = app.emit("conversion-progress", &data);
                 }
+                "done" => {
+                    last_output = data["output"].as_str().unwrap_or("").to_string();
+                    let _ = app.emit("conversion-progress", &data);
+                }
+                "error" => {
+                    let err_msg = data["error"].as_str().unwrap_or("Unknown error");
+                    let _ = app.emit("conversion-progress", &data);
+                    let _ = child.wait();
+                    let _ = stderr_handle.join();
+                    return Err(err_msg.to_string());
+                }
+                _ => {}
+            }
+        } else {
+            if non_json_lines.len() < 20 {
+                non_json_lines.push(line);
             }
         }
     }
 
     let status = child.wait().map_err(|e| format!("Failed to wait: {}", e))?;
+    let stderr_lines = stderr_handle
+        .join()
+        .unwrap_or_default();
+
+    eprintln!("[PDFGOD DEBUG] input='{}' format='{}' status={:?} last_output='{}' stderr_lines={:?} non_json={:?}",
+        input, format, status.code(), last_output, stderr_lines, non_json_lines);
 
     if status.success() {
         if last_output.is_empty() {
-            return Err("Conversion completed but no output path returned".to_string());
+            let detail = if !non_json_lines.is_empty() {
+                format!(" | stdout: {}", non_json_lines.join(" | "))
+            } else if !stderr_lines.is_empty() {
+                format!(" | stderr: {}", stderr_lines.join(" | "))
+            } else {
+                String::new()
+            };
+            return Err(format!("Conversion completed but no output path returned{}", detail));
         }
         Ok(last_output)
     } else {
-        // Read stderr for error details
-        let stderr = child.stderr.take().unwrap();
-        let err_reader = std::io::BufReader::new(stderr);
-        let err_lines: Vec<String> = err_reader
-            .lines()
-            .filter_map(|l| l.ok())
-            .collect();
-        let err_msg = if err_lines.is_empty() {
+        let mut parts: Vec<String> = Vec::new();
+        if !stderr_lines.is_empty() {
+            parts.push(stderr_lines.join("\n"));
+        }
+        if !non_json_lines.is_empty() {
+            parts.push(format!("stdout: {}", non_json_lines.join(" | ")));
+        }
+        let err_msg = if parts.is_empty() {
             format!("Python process exited with code: {:?}", status.code())
         } else {
-            err_lines.join("\n")
+            parts.join("\n")
         };
         Err(err_msg)
     }

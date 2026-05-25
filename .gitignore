@@ -19,6 +19,21 @@ src-tauri/target/
 __pycache__/
 *.pyc
 
+# PaddleOCR (large models + venv, not tracked)
+PaddleOCR/
+
+# Test artifacts
+test_*.pdf
+test_*.docx
+test_*.pptx
+test_*.txt
+test_*.xlsx
+test_*_images/
+ocr_test_output.txt
+
+# Claude
+.claude/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

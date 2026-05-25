@@ -1,67 +1,132 @@
 <script setup lang="ts">
-const props = defineProps<{
-  path: string;
-  format: string;
+export interface ConvertResult {
+  input: string;
+  output?: string;
+  error?: string;
+}
+
+defineProps<{
+  results: ConvertResult[];
 }>();
 
 const emit = defineEmits<{ reset: [] }>();
 
-function getFileName(): string {
-  const parts = props.path.replace(/\\/g, "/").split("/");
-  return parts[parts.length - 1] || "output";
+function fileName(p: string): string {
+  const parts = p.replace(/\\/g, "/").split("/");
+  return parts[parts.length - 1] || p;
 }
-
 </script>
 
 <template>
-  <div class="result-card">
-    <div class="result-icon">✅</div>
-    <p class="result-title">Conversion Complete!</p>
-    <p class="result-file">{{ getFileName() }}</p>
-    <p class="result-path">{{ path }}</p>
-    <button class="btn-reset" @click="emit('reset')">Convert Another File</button>
+  <div class="results-section" v-if="results.length > 0">
+    <p class="results-title">Results ({{ results.filter(r => r.output).length }}/{{ results.length }} succeeded)</p>
+    <div
+      v-for="(r, i) in results"
+      :key="i"
+      class="result-item"
+      :class="{ success: r.output, error: r.error }"
+    >
+      <div class="result-left">
+        <span class="result-icon">{{ r.output ? 'OK' : 'FAIL' }}</span>
+        <div class="result-info">
+          <p class="result-file">{{ fileName(r.input) }}</p>
+          <p class="result-path" v-if="r.output">{{ r.output }}</p>
+          <p class="result-error" v-if="r.error">{{ r.error }}</p>
+        </div>
+      </div>
+    </div>
+    <button class="btn-new-task" @click="emit('reset')">New Task</button>
   </div>
 </template>
 
 <style scoped>
-.result-card {
+.results-section {
   width: 100%;
-  padding: 24px;
-  background: #1a1a1a;
-  border: 1px solid #333;
-  border-radius: 14px;
-  text-align: center;
   display: flex;
   flex-direction: column;
+  gap: 6px;
+}
+
+.results-title {
+  font-size: 13px;
+  color: #888;
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+
+.result-item {
+  display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.result-item.success {
+  background: rgba(76, 175, 80, 0.08);
+  border: 1px solid rgba(76, 175, 80, 0.15);
+}
+
+.result-item.error {
+  background: rgba(255, 80, 80, 0.06);
+  border: 1px solid rgba(255, 80, 80, 0.12);
+}
+
+.result-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  overflow: hidden;
 }
 
 .result-icon {
-  font-size: 40px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
 }
 
-.result-title {
-  font-size: 18px;
-  font-weight: 600;
+.success .result-icon {
   color: #4caf50;
+  background: rgba(76, 175, 80, 0.15);
+}
+
+.error .result-icon {
+  color: #ff6060;
+  background: rgba(255, 80, 80, 0.12);
+}
+
+.result-info {
+  overflow: hidden;
 }
 
 .result-file {
-  font-size: 14px;
   color: #ccc;
-  word-break: break-all;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .result-path {
-  font-size: 11px;
-  color: #555;
-  word-break: break-all;
-  max-width: 100%;
+  color: #666;
+  font-size: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
 }
 
-.btn-reset {
-  margin-top: 8px;
+.result-error {
+  color: #cc6666;
+  font-size: 10px;
+  margin-top: 2px;
+  word-break: break-all;
+}
+
+.btn-new-task {
+  margin-top: 12px;
   padding: 10px 24px;
   background: linear-gradient(135deg, #667eea, #764ba2);
   border: none;
@@ -70,9 +135,10 @@ function getFileName(): string {
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
+  align-self: center;
 }
 
-.btn-reset:hover {
+.btn-new-task:hover {
   opacity: 0.9;
 }
 </style>

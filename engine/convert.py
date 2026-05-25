@@ -3,10 +3,18 @@
 
 import argparse
 import json
+import logging
 import os
 import sys
-import time
 from pathlib import Path
+
+# Force UTF-8 for stdout/stderr to ensure clean JSON communication with Tauri
+if sys.platform == "win32":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
+# Suppress noisy library logging
+logging.disable(logging.CRITICAL)
 
 
 def report(progress, message, output=None, error=None):
