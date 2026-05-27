@@ -81,6 +81,13 @@ fn convert_pdf(
         cmd.arg("--dpi").arg(d.to_string());
     }
 
+    // Prevent PaddlePaddle ACCESS_VIOLATION crash when spawned from Tauri context.
+    // The crash (0xC0000005) occurs inside oneDNN/MKL native code due to thread
+    // pool conflicts between parent and child process. Single-threading avoids it.
+    cmd.env("OMP_NUM_THREADS", "1");
+    cmd.env("KMP_AFFINITY", "disabled");
+    cmd.env("OPENBLAS_NUM_THREADS", "1");
+
     let mut child = cmd.spawn().map_err(|e| format!("Failed to start Python ({}): {}", python.display(), e))?;
 
     // Take stdout and stderr before spawning threads
