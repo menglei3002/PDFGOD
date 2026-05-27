@@ -30,6 +30,7 @@ test_*.txt
 test_*.xlsx
 test_*_images/
 ocr_test_output.txt
+test_output/
 
 # Claude
 .claude/

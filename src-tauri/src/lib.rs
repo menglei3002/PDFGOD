@@ -3,27 +3,11 @@ use std::process::{Command, Stdio};
 use std::thread;
 use tauri::{Emitter, Manager};
 
-fn find_python_venv() -> Option<std::path::PathBuf> {
-    let cwd = std::env::current_dir().ok()?;
-    let exe_dir = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|d| d.to_path_buf()))?;
-
-    let candidates: Vec<std::path::PathBuf> = vec![
-        cwd.join("PaddleOCR/.venv/Scripts/python.exe"),
-        cwd.join("../PaddleOCR/.venv/Scripts/python.exe"),
-        exe_dir.join("../../../PaddleOCR/.venv/Scripts/python.exe"),
-    ];
-
-    candidates.into_iter().find(|p| p.exists())
-}
-
 fn find_python() -> std::path::PathBuf {
-    // Prefer local PaddleOCR venv Python (D drive, no C drive usage)
-    if let Some(venv) = find_python_venv() {
-        return venv;
-    }
-
+    // Use system Python directly to avoid DLL init failures (STATUS_DLL_INIT_FAILED)
+    // that occur when spawning venv python.exe from a Tauri process.
+    // The venv wrapper relies on pyvenv.cfg to locate base Python DLLs, which
+    // fails when the spawning process has a different environment.
     if cfg!(target_os = "windows") {
         for candidate in &["python", "py"] {
             let args = if *candidate == "py" {
