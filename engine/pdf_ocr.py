@@ -22,17 +22,9 @@ def convert(input_path: str, output_path: str, report_fn) -> str:
         model_dir = os.path.abspath(model_dir)
         os.environ.setdefault("PADDLE_PDX_CACHE_HOME", model_dir)
 
-        # Skip unnecessary preprocessors for speed (PDF pages don't need orientation fix or unwarping)
-        # Use mobile models for speed (3-5x faster than server models)
-        ocr_engine = PaddleOCR(
-            lang="ch",
-            enable_mkldnn=False,
-            use_doc_orientation_classify=False,
-            use_doc_unwarping=False,
-            use_textline_orientation=False,
-            text_detection_model_name="PP-OCRv5_mobile_det",
-            text_recognition_model_name="PP-OCRv5_mobile_rec",
-        )
+        # PaddleOCR 3.5 uses auto-downloaded models based on lang
+        # Disable MKLDNN to avoid oneDNN attribute conversion bug on some CPUs
+        ocr_engine = PaddleOCR(lang="ch", enable_mkldnn=False)
         report_fn(10, "Using PaddleOCR (Chinese-optimized)...")
     except ImportError:
         report_fn(10, "PaddleOCR not available, trying Tesseract...")
