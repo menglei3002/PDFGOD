@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
+
 export interface ConvertResult {
   input: string;
   output?: string;
@@ -15,6 +17,7 @@ function fileName(p: string): string {
   const parts = p.replace(/\\/g, "/").split("/");
   return parts[parts.length - 1] || p;
 }
+
 </script>
 
 <template>
@@ -33,6 +36,20 @@ function fileName(p: string): string {
           <p class="result-path" v-if="r.output">{{ r.output }}</p>
           <p class="result-error" v-if="r.error">{{ r.error }}</p>
         </div>
+      </div>
+      <div class="result-actions" v-if="r.output">
+        <button class="btn-action" title="Open file" @click="openPath(r.output!)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 13v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h6"/>
+            <polyline points="15 3 21 3 21 9"/>
+            <line x1="10" y1="14" x2="21" y2="3"/>
+          </svg>
+        </button>
+        <button class="btn-action" title="Open folder" @click="revealItemInDir(r.output!)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+          </svg>
+        </button>
       </div>
     </div>
     <button class="btn-new-task" @click="emit('reset')">New Task</button>
@@ -123,6 +140,31 @@ function fileName(p: string): string {
   font-size: 10px;
   margin-top: 2px;
   word-break: break-all;
+}
+
+.result-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.btn-action {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #888;
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+
+.btn-action:hover {
+  background: #667eea;
+  border-color: #667eea;
+  color: #fff;
 }
 
 .btn-new-task {

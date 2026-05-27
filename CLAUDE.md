@@ -69,7 +69,8 @@ npm run tauri build    # 生产构建
 - OCR 首次运行需下载模型（~15 MB mobile，~200 MB server）
 - @tauri-apps/plugin-dialog `save()` 可能有问题，目前使用动态 import
 
-## 输出路径选择问题
-- 已从静态 import 改为动态 import：`const { save } = await import("@tauri-apps/plugin-dialog")`
-- 权限：`capabilities/default.json` 包含 `dialog:default`, `dialog:allow-save`, `dialog:allow-open`
-- 如果 save dialog 仍然不工作，考虑用 `open` dialog 选目录替代
+## 输出路径选择
+- 使用 `open({ directory: true })` 选择输出目录，文件名根据输入 PDF 自动生成
+- Image 格式输出为 `{baseName}_images/` 目录，其他格式为 `{baseName}.{ext}` 文件
+- 权限：`capabilities/default.json` 包含 `dialog:default`, `dialog:allow-open`
+- 结果卡片有"打开文件"(`openPath`)和"打开目录"(`revealItemInDir`)按钮

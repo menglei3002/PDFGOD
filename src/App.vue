@@ -45,20 +45,28 @@ function fileName(p: string): string {
   return parts[parts.length - 1] || p;
 }
 
+function outputPathFor(inputPath: string, format: string): string {
+  const extMap: Record<string, string> = {
+    word: "docx", excel: "xlsx", ppt: "pptx", txt: "txt", ocr: "docx",
+  };
+  const inputDir = inputPath.replace(/\\/g, "/").split("/").slice(0, -1).join("/");
+  const baseName = fileName(inputPath).replace(/\.pdf$/i, "");
+  if (format === "image") {
+    return `${inputDir}/${baseName}_images/`;
+  }
+  return `${inputDir}/${baseName}.${extMap[format] || "docx"}`;
+}
+
 function onFormatSelected(format: string) {
   selectedFormat.value = format;
+  files.value = files.value.map(f => ({ ...f, outputPath: outputPathFor(f.path, format) }));
+  results.value = [];
 }
 
 function onFilesSelected(paths: string[]) {
-  const extMap: Record<string, string> = {
-    word: "docx", excel: "xlsx", ppt: "pptx", txt: "txt", image: "png", ocr: "docx",
-  };
-  const ext = extMap[selectedFormat.value] || "docx";
   for (const p of paths) {
     if (!files.value.some((f) => f.path === p)) {
-      const inputDir = p.replace(/\\/g, "/").split("/").slice(0, -1).join("/");
-      const baseName = fileName(p).replace(/\.pdf$/i, "");
-      files.value.push({ path: p, outputPath: `${inputDir}/${baseName}.${ext}` });
+      files.value.push({ path: p, outputPath: outputPathFor(p, selectedFormat.value) });
     }
   }
 }
@@ -70,28 +78,17 @@ function onRemoveFile(index: number) {
 
 async function onChooseOutput(index: number) {
   try {
-    const extMap: Record<string, string> = {
-      word: "docx", excel: "xlsx", ppt: "pptx", txt: "txt", image: "png", ocr: "docx",
-    };
-    const ext = extMap[selectedFormat.value] || "docx";
-    const inputFile = files.value[index].path;
-    const inputDir = inputFile.replace(/\\/g, "/").split("/").slice(0, -1).join("/");
-    const baseName = fileName(inputFile).replace(/\.pdf$/i, "");
-    const defaultPath = `${inputDir}/${baseName}.${ext}`;
+    const { open } = await import("@tauri-apps/plugin-dialog");
+    const dir = await open({ directory: true, title: "Choose output directory" });
+    if (!dir) return;
 
-    // Dynamic import — matches pattern used by DropZone.vue which works
-    const { save } = await import("@tauri-apps/plugin-dialog");
-    const saved = await save({
-      defaultPath,
-      filters: [{ name: selectedFormat.value.toUpperCase(), extensions: [ext] }],
-    });
-    if (saved) {
-      const updated = [...files.value];
-      updated[index] = { ...updated[index], outputPath: saved };
-      files.value = updated;
-    }
+    const dirPath = typeof dir === "string" ? dir.replace(/\\/g, "/") : dir;
+    const fileName = outputPathFor(files.value[index].path, selectedFormat.value).split("/").pop()!;
+    const updated = [...files.value];
+    updated[index] = { ...updated[index], outputPath: `${dirPath}/${fileName}` };
+    files.value = updated;
   } catch (e) {
-    alert("Save dialog failed: " + (e instanceof Error ? e.message : String(e)));
+    alert("Failed to choose output directory: " + (e instanceof Error ? e.message : String(e)));
   }
 }
 
