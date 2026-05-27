@@ -22,9 +22,18 @@ def convert(input_path: str, output_path: str, report_fn) -> str:
         model_dir = os.path.abspath(model_dir)
         os.environ.setdefault("PADDLE_PDX_CACHE_HOME", model_dir)
 
-        # PaddleOCR 3.5 uses auto-downloaded models based on lang
+        # PaddleOCR 3.5 — use mobile models for speed (3-5x faster than server)
+        # Disable unnecessary preprocessors: PDF pages don't need orientation fix or unwarping
         # Disable MKLDNN to avoid oneDNN attribute conversion bug on some CPUs
-        ocr_engine = PaddleOCR(lang="ch", enable_mkldnn=False)
+        ocr_engine = PaddleOCR(
+            lang="ch",
+            enable_mkldnn=False,
+            use_doc_orientation_classify=False,
+            use_doc_unwarping=False,
+            use_textline_orientation=False,
+            text_detection_model_name="PP-OCRv5_mobile_det",
+            text_recognition_model_name="PP-OCRv5_mobile_rec",
+        )
         report_fn(10, "Using PaddleOCR (Chinese-optimized)...")
     except ImportError:
         report_fn(10, "PaddleOCR not available, trying Tesseract...")
@@ -42,8 +51,8 @@ def convert(input_path: str, output_path: str, report_fn) -> str:
     with tempfile.TemporaryDirectory() as tmpdir:
         for i in range(total):
             page = doc[i]
-            # 2x zoom for good OCR accuracy
-            mat = fitz.Matrix(2.0, 2.0)
+            # 1.5x zoom balances OCR accuracy and speed
+            mat = fitz.Matrix(1.5, 1.5)
             pix = page.get_pixmap(matrix=mat)
             img_path = os.path.join(tmpdir, f"ocr_page_{i:03d}.png")
             pix.save(img_path)
